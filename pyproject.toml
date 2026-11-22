@@ -1,11 +1,14 @@
 [project]
-name = "blank-app-template"
+name = "llm-study-assistant"
 version = "0.1.0"
-description = "A simple Streamlit app template."
+description = "A PDF study assistant with a choice of language models."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "streamlit>=1.61.1",
+    "streamlit==1.66.0",
+    "groq==1.7.0",
+    "pypdf==7.1.1",
+    "scikit-learn==1.9.1",
 ]
 
 [tool.uv]
