@@ -5,7 +5,7 @@ description = "A PDF study assistant with a choice of language models."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "streamlit==1.66.0",
+    "streamlit==1.67.0",
     "groq==1.7.0",
     "pypdf==7.1.1",
     "scikit-learn==1.9.1",
