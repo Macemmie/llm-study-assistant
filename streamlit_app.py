@@ -1,5 +1,3 @@
-"""A document-grounded LLM workshop app."""
-
 import hashlib
 import io
 import os
@@ -26,20 +24,24 @@ MODELS = {
     "Qwen 3.8 27B": "qwen/qwen3.8-27b",
 }
 
-MAX_PDFS = 2
+MAX_PDFS = 50
 MAX_BYTES = 10 * 1024 * 1024
 MAX_PAGES = 100
 
 
 def extract_passages(pdf_bytes, document_label):
-    """Create passages with document labels and page numbers."""
+    """Create passages while preserving document and page information."""
     reader = PdfReader(io.BytesIO(pdf_bytes))
 
     if reader.is_encrypted:
-        raise ValueError("Please use a PDF without password protection.")
+        raise ValueError(
+            "Please use a PDF without password protection."
+        )
 
     if len(reader.pages) > MAX_PAGES:
-        raise ValueError("Please use a PDF with 100 pages or fewer.")
+        raise ValueError(
+            f"Please use a PDF with {MAX_PAGES} pages or fewer."
+        )
 
     passages = []
 
@@ -47,11 +49,13 @@ def extract_passages(pdf_bytes, document_label):
         words = (page.extract_text() or "").split()
 
         for start in range(0, len(words), 120):
-            passages.append({
-                "document": document_label,
-                "page": page_number,
-                "text": " ".join(words[start:start + 150]),
-            })
+            passages.append(
+                {
+                    "document": document_label,
+                    "page": page_number,
+                    "text": " ".join(words[start:start + 150]),
+                }
+            )
 
             if start + 150 >= len(words):
                 break
@@ -60,7 +64,7 @@ def extract_passages(pdf_bytes, document_label):
 
 
 def retrieve_passages(passages, question):
-    """Find up to three passages using keyword similarity."""
+    """Find up to three passages using TF-IDF and cosine similarity."""
     if not passages or not question.strip():
         return []
 
@@ -68,7 +72,7 @@ def retrieve_passages(passages, question):
 
     try:
         vectors = vectorizer.fit_transform(
-            [p["text"] for p in passages]
+            [passage["text"] for passage in passages]
         )
     except ValueError:
         return []
@@ -77,17 +81,20 @@ def retrieve_passages(passages, question):
     scores = cosine_similarity(question_vector, vectors)[0]
 
     return [
-        passages[i]
-        for i in scores.argsort()[::-1][:3]
-        if scores[i] > 0
+        passages[index]
+        for index in scores.argsort()[::-1][:3]
+        if scores[index] > 0
     ]
 
 
 def format_sources(passages):
     return [
-        f"[S{number}] {p['document']} | PDF page {p['page']}\n"
-        f"{p['text']}"
-        for number, p in enumerate(passages, start=1)
+        (
+            f"[S{number}] {passage['document']} | "
+            f"PDF page {passage['page']}\n"
+            f"{passage['text']}"
+        )
+        for number, passage in enumerate(passages, start=1)
     ]
 
 
@@ -123,7 +130,8 @@ def request_answer(api_key, model_id, question, sources):
                     "'I could not find enough information in the "
                     "retrieved passages.' "
                     "Do not invent facts or source labels. "
-                    "Cite supporting labels such as [S1] for factual claims. "
+                    "Cite supporting labels such as [S1] "
+                    "for factual claims. "
                     "Keep the answer under 150 words."
                 ),
             },
@@ -157,8 +165,9 @@ def main():
     )
 
     st.title("Research and Study Assistant")
+
     st.write(
-        "Choose a model, upload one or two PDFs, "
+        f"Choose a model, upload up to {MAX_PDFS} PDFs, "
         "and ask about their contents."
     )
 
@@ -198,30 +207,32 @@ def main():
             )
 
         st.markdown("**Try a comparison**")
+
         st.write(
             "Ask the same question with each model. "
             "Check which claims the passages support, "
-            "and test a question the PDF cannot answer."
+            "and test a question the PDFs cannot answer."
         )
 
     api_key = personal_key.strip() or configured_api_key()
 
     if not api_key:
         st.info(
-            "The app owner can add GROQ_API_KEY in the app's "
-            "Secrets settings. For a private preview, "
-            "you can enter your own key in the sidebar."
+            "The app owner can add GROQ_API_KEY "
+            "in the app's Secrets settings. "
+            "For a private preview, you can enter "
+            "your own key in the sidebar."
         )
 
     uploads = st.file_uploader(
-        "Upload one or two PDFs",
+        f"Upload up to {MAX_PDFS} PDFs",
         type=["pdf"],
         accept_multiple_files=True,
     )
 
     if len(uploads) > MAX_PDFS:
         st.warning(
-            "Please keep at most two PDFs. "
+            f"Please keep at most {MAX_PDFS} PDFs. "
             "Remove the extra files to continue."
         )
         st.stop()
@@ -245,7 +256,7 @@ def main():
 
         if uploaded_pdf.size > MAX_BYTES:
             st.warning(
-                f"{label}: please use a file smaller than 10 MB."
+                f"{label}: please use a file of 10 MB or less."
             )
             continue
 
@@ -282,7 +293,7 @@ def main():
 
         with st.expander(f"Preview extracted text — {label}"):
             preview = "\n\n".join(
-                p["text"] for p in extracted
+                passage["text"] for passage in extracted
             )
             st.text(preview[:4000])
 
@@ -328,8 +339,9 @@ def main():
         if not selected:
             st.warning(
                 "No matching passages were found. "
-                "Try wording from the PDF. This does not prove "
-                "the answer is absent from the whole document."
+                "Try wording from the PDFs. "
+                "This does not prove the answer is absent "
+                "from the documents."
             )
             st.stop()
 
@@ -337,8 +349,8 @@ def main():
 
         try:
             with st.spinner(
-                f"{model_name} is answering from "
-                "the selected passages…"
+                f"{model_name} is answering "
+                "from the selected passages…"
             ):
                 response = request_answer(
                     api_key,
@@ -346,28 +358,24 @@ def main():
                     question.strip(),
                     sources,
                 )
-
         except AuthenticationError:
             st.error(
                 "The Groq key was not accepted. "
                 "Check the key and try again."
             )
             st.stop()
-
         except RateLimitError:
             st.warning(
                 "The Groq account has reached a usage limit. "
                 "Wait and try again."
             )
             st.stop()
-
         except (APITimeoutError, APIConnectionError):
             st.warning(
                 "Groq could not be reached in time. "
                 "Please try again shortly."
             )
             st.stop()
-
         except APIError:
             st.error(
                 "Groq could not complete this request. "
@@ -423,7 +431,8 @@ def main():
         st.caption(
             "Check each claim against the passages. "
             "Citations do not guarantee correctness. "
-            "Answers use retrieved passages, which may miss evidence."
+            "Answers use retrieved passages, "
+            "which may miss evidence."
         )
 
 
